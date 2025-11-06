@@ -13,12 +13,13 @@ def install_dependencies():
         'pyautogui',
         'python-xlib',  # for Linux/Mac
         'pywin32',      # for Windows clipboard support
-        'openpyxl>=3.1.2'
+        'openpyxl==3.0.10',  # Use stable version to avoid extLst error
+        'xlrd>=2.0.1'         # Add xlrd for .xls file support
     ]
     
     for dep in dependencies:
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", dep])
             st.info(f"Installed {dep} successfully")
         except Exception as e:
             st.error(f"Could not install {dep}: {e}")
@@ -79,11 +80,11 @@ def main():
     # Sidebar for configuration
     st.sidebar.header("Configuration")
 
-    # Excel file upload
+    # Excel/CSV file upload
     uploaded_file = st.sidebar.file_uploader(
-        "Upload Excel File", 
-        type=['xlsx', 'xls'],
-        help="Excel file must contain 'Name' and 'Phone Number' columns"
+        "Upload Excel/CSV File", 
+        type=['xlsx', 'xls', 'csv'],
+        help="File must contain 'Name' and 'Phone Number' columns"
     )
 
     # Image file upload
@@ -114,16 +115,46 @@ def main():
                     with open(image_path, 'wb') as f:
                         f.write(uploaded_image.getbuffer())
 
-                # Read Excel file
+                # Read file based on extension with improved error handling
                 try:
-                    df = pd.read_excel(uploaded_file, engine='openpyxl')
+                    # Try different engines based on file extension
+                    file_extension = uploaded_file.name.lower().split('.')[-1]
+                    
+                    if file_extension == 'csv':
+                        df = pd.read_csv(uploaded_file)
+                    elif file_extension == 'xlsx':
+                        df = pd.read_excel(uploaded_file, engine='openpyxl')
+                    elif file_extension == 'xls':
+                        df = pd.read_excel(uploaded_file, engine='xlrd')
+                    else:
+                        # Default to CSV then openpyxl
+                        try:
+                            df = pd.read_csv(uploaded_file)
+                        except:
+                            df = pd.read_excel(uploaded_file, engine='openpyxl')
+                        
                 except Exception as excel_error:
                     st.error(f"Error reading Excel file: {excel_error}")
+                    
+                    # Show specific error messages and solutions
+                    if "extLst" in str(excel_error):
+                        st.error("⚠️ openpyxl version compatibility issue detected!")
+                        st.info("💡 Solution: Run this command in terminal: pip install openpyxl==3.0.10")
+                    elif "xlrd" in str(excel_error) or "Missing optional dependency 'xlrd'" in str(excel_error):
+                        st.error("⚠️ Missing xlrd dependency for .xls files!")
+                        st.info("💡 Solution: Run this command in terminal: pip install xlrd>=2.0.1")
+                    
+                    # Try alternative approach
                     try:
-                        # Fallback to xlrd engine
-                        df = pd.read_excel(uploaded_file, engine='xlrd')
+                        st.info("Attempting alternative file reading method...")
+                        if file_extension == 'xls':
+                            df = pd.read_excel(uploaded_file, engine='xlrd')
+                        else:
+                            df = pd.read_excel(uploaded_file, engine='openpyxl')
                     except Exception as fallback_error:
-                        st.error(f"Could not read Excel file with any engine: {fallback_error}")
+                        st.error(f"All file reading methods failed: {fallback_error}")
+                        st.error("Please ensure you have the correct dependencies installed:")
+                        st.code("pip install openpyxl==3.0.10 xlrd>=2.0.1")
                         return
 
                 # Validate columns
