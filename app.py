@@ -13,7 +13,7 @@ def install_dependencies():
         'pyautogui',
         'python-xlib',  # for Linux/Mac
         'pywin32',      # for Windows clipboard support
-        'openpyxl'
+        'openpyxl>=3.1.2'
     ]
     
     for dep in dependencies:
@@ -115,8 +115,17 @@ def main():
                         f.write(uploaded_image.getbuffer())
 
                 # Read Excel file
-                df = pd.read_excel(uploaded_file)
-                
+                try:
+                    df = pd.read_excel(uploaded_file, engine='openpyxl')
+                except Exception as excel_error:
+                    st.error(f"Error reading Excel file: {excel_error}")
+                    try:
+                        # Fallback to xlrd engine
+                        df = pd.read_excel(uploaded_file, engine='xlrd')
+                    except Exception as fallback_error:
+                        st.error(f"Could not read Excel file with any engine: {fallback_error}")
+                        return
+
                 # Validate columns
                 required_columns = ['Name', 'Phone Number']
                 if not all(col in df.columns for col in required_columns):
