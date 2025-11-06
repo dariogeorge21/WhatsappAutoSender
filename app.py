@@ -132,6 +132,33 @@ def send_whatsapp_message(phone_number, message, media_path=None, media_type='im
         error_msg = f"Error sending message to {phone_number}: {str(e)}"
         return False, error_msg
 
+def clear_whatsapp_cache():
+    """
+    Clear WhatsApp Web cache and old messages to prevent message combining
+    """
+    try:
+        # Clear browser cache
+        pyautogui.hotkey('ctrl', 'shift', 'delete')
+        time.sleep(3)
+        
+        # Press Enter to confirm clearing (works for most browsers)
+        pyautogui.press('enter')
+        time.sleep(2)
+        
+        # Refresh the page
+        pyautogui.hotkey('ctrl', 'r')
+        time.sleep(15)  # Wait for page to reload
+        
+        # Clear any existing draft messages by pressing Escape multiple times
+        for _ in range(3):
+            pyautogui.press('escape')
+            time.sleep(0.5)
+            
+        st.info("✅ Cleared WhatsApp Web cache and old messages")
+        
+    except Exception as e:
+        st.warning(f"Could not clear cache: {e}")
+
 def main():
     st.title("WhatsApp Bulk Message Sender (PyWhatKit)")
 
@@ -252,7 +279,7 @@ def main():
                         # Personalize message
                         personalized_message = message_template.replace("{{Name}}", str(row['Name']))
                         
-                        # Open WhatsApp Web only if it's not already open
+                        # Clear WhatsApp Web cache and refresh for each message
                         if not whatsapp_open:
                             # Open WhatsApp Web in the first tab
                             pyautogui.hotkey('ctrl', 't')  # Open new tab
@@ -260,6 +287,9 @@ def main():
                             pyautogui.press('enter')
                             time.sleep(20)  # Wait for WhatsApp Web to load
                             whatsapp_open = True
+                        else:
+                            # Clear cache and refresh WhatsApp Web for each new message
+                            clear_whatsapp_cache()
 
                         # Send message
                         success, send_status = send_whatsapp_message(
@@ -283,11 +313,13 @@ def main():
                         # Wait between messages to avoid rate limiting
                         time.sleep(10)  # Adjusted sleep time for smoother operation
 
-                        # Close tab after each message is sent
+                        # Close tab after each message is sent to prevent message combining
                         if success:
                             pyautogui.hotkey('ctrl', 'w')  # Close current tab
-                            time.sleep(5)  # Allow time for tab to close
-                            # Keep WhatsApp Web open in the same tab for next message
+                            time.sleep(3)  # Allow time for tab to close
+                            
+                            # Reset flag to open fresh WhatsApp Web for next message
+                            whatsapp_open = False
 
                     except Exception as inner_e:
                         st.error(f"Error processing contact {row['Name']}: {inner_e}")
