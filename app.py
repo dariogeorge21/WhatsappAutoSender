@@ -5,6 +5,8 @@ import time
 import sys
 import subprocess
 import pyautogui
+import logging
+from pathlib import Path
 
 # Attempt to install missing dependencies
 def install_dependencies():
@@ -40,39 +42,95 @@ except ImportError:
         st.error("Failed to install required dependencies. Please install manually.")
         st.stop()
 
-def send_whatsapp_message(phone_number, message, image_path=None):
+def send_whatsapp_message(phone_number, message, media_path=None, media_type='image'):
     """
-    Send WhatsApp message with optional image using PyWhatKit
+    Send WhatsApp message with optional media (image/video) using PyWhatKit
+
+    Args:
+        phone_number: Recipient's phone number
+        message: Message text or caption
+        media_path: Path to media file (image or video)
+        media_type: Type of media ('image' or 'video')
+
+    Returns:
+        tuple: (success: bool, message: str)
     """
     try:
         # Clean phone number (remove non-digit characters)
         cleaned_number = ''.join(filter(str.isdigit, str(phone_number)))
-        
+
         # Ensure the number is in the correct format (with country code)
+        # Remove leading 91 if already present to avoid duplication
+        if cleaned_number.startswith('91') and len(cleaned_number) > 10:
+            cleaned_number = cleaned_number[2:]
+
         formatted_number = f"+91{cleaned_number}"
-        
-        # Send message
-        if image_path and os.path.exists(image_path):
-            # Send message with image
-            pywhatkit.sendwhats_image(
-                receiver=formatted_number, 
-                img_path=image_path, 
-                caption=message, 
-                wait_time=10  # Wait time in seconds before sending
-            )
+
+        # Validate media file if provided
+        if media_path:
+            if not os.path.exists(media_path):
+                return False, f"Media file not found: {media_path}"
+
+            # Get absolute path to ensure it's accessible
+            media_path = os.path.abspath(media_path)
+            file_size = os.path.getsize(media_path)
+
+            # Check file size (WhatsApp has limits)
+            max_size_mb = 100 if media_type == 'video' else 16
+            if file_size > max_size_mb * 1024 * 1024:
+                return False, f"Media file too large. Max size: {max_size_mb}MB"
+
+            # Log media details
+            st.write(f"📎 Attaching {media_type}: {os.path.basename(media_path)} ({file_size / 1024 / 1024:.2f}MB)")
+
+        # Send message with media
+        if media_path and os.path.exists(media_path):
+            try:
+                if media_type == 'image':
+                    # Send message with image
+                    pywhatkit.sendwhats_image(
+                        receiver=formatted_number,
+                        img_path=media_path,
+                        caption=message,
+                        wait_time=15  # Increased wait time for image processing
+                    )
+                    return True, f"Message with image sent to {phone_number}"
+
+                elif media_type == 'video':
+                    # Send message with video
+                    pywhatkit.sendwhats_video(
+                        receiver=formatted_number,
+                        video_path=media_path,
+                        caption=message,
+                        wait_time=15  # Increased wait time for video processing
+                    )
+                    return True, f"Message with video sent to {phone_number}"
+
+            except AttributeError as ae:
+                # If sendwhats_video doesn't exist, fall back to image method
+                if 'sendwhats_video' in str(ae):
+                    st.warning(f"Video sending not supported in this pywhatkit version. Sending as image instead.")
+                    pywhatkit.sendwhats_image(
+                        receiver=formatted_number,
+                        img_path=media_path,
+                        caption=message,
+                        wait_time=15
+                    )
+                    return True, f"Message with media sent to {phone_number}"
+                raise
+
         else:
             # Send text message only
             pywhatkit.sendwhatmsg_instantly(
-                phone_no=formatted_number, 
+                phone_no=formatted_number,
                 message=message,
-                wait_time=10  # Wait time in seconds before sending
+                wait_time=10
             )
-        
-        return True
-    
+            return True, f"Text message sent to {phone_number}"
+
     except Exception as e:
-        st.error(f"Error sending message to {phone_number}: {e}")
-        return False
+        error_msg = f"Error sending message to {phone_number}: {str(e)}"
+        return False, error_msg
 
 def main():
     st.title("WhatsApp Bulk Message Sender (PyWhatKit)")
@@ -87,11 +145,11 @@ def main():
         help="File must contain 'Name' and 'Phone Number' columns"
     )
 
-    # Image file upload
-    uploaded_image = st.sidebar.file_uploader(
-        "Upload Image (Optional)", 
-        type=['png', 'jpg', 'jpeg'],
-        help="Image to send along with the message"
+    # Media file upload (images and videos)
+    uploaded_media = st.sidebar.file_uploader(
+        "Upload Media (Optional)",
+        type=['png', 'jpg', 'jpeg', 'gif', 'mp4', 'avi', 'mov', 'mkv'],
+        help="Image or video to send along with the message"
     )
 
     # Message input
@@ -106,14 +164,27 @@ def main():
         # Validate file upload
         if uploaded_file is not None:
             try:
-                # Save uploaded image temporarily if provided
-                image_path = None
-                if uploaded_image:
+                # Save uploaded media temporarily if provided
+                media_path = None
+                media_type = 'image'
+
+                if uploaded_media:
                     # Create temp directory if it doesn't exist
                     os.makedirs('temp', exist_ok=True)
-                    image_path = os.path.join('temp', uploaded_image.name)
-                    with open(image_path, 'wb') as f:
-                        f.write(uploaded_image.getbuffer())
+                    media_path = os.path.join('temp', uploaded_media.name)
+
+                    # Determine media type based on file extension
+                    file_ext = uploaded_media.name.lower().split('.')[-1]
+                    if file_ext in ['mp4', 'avi', 'mov', 'mkv']:
+                        media_type = 'video'
+                    else:
+                        media_type = 'image'
+
+                    # Save media file
+                    with open(media_path, 'wb') as f:
+                        f.write(uploaded_media.getbuffer())
+
+                    st.success(f"✅ Media file uploaded: {uploaded_media.name} ({media_type})")
 
                 # Read file based on extension with improved error handling
                 try:
@@ -191,11 +262,18 @@ def main():
                             whatsapp_open = True
 
                         # Send message
-                        success = send_whatsapp_message(
-                            str(row['Phone Number']), 
+                        success, send_status = send_whatsapp_message(
+                            str(row['Phone Number']),
                             personalized_message,
-                            image_path
+                            media_path,
+                            media_type
                         )
+
+                        # Display status
+                        if success:
+                            st.success(f"✅ {send_status}")
+                        else:
+                            st.error(f"❌ {send_status}")
 
                         # Update progress
                         progress = (idx + 1) / total_contacts
@@ -221,26 +299,36 @@ def main():
                 st.error(f"An error occurred: {e}")
             
             finally:
-                # Remove temporary image
-                if 'image_path' in locals() and image_path and os.path.exists(image_path):
-                    os.remove(image_path)
+                # Remove temporary media file
+                if 'media_path' in locals() and media_path and os.path.exists(media_path):
+                    try:
+                        os.remove(media_path)
+                        st.info(f"Cleaned up temporary media file: {media_path}")
+                    except Exception as cleanup_error:
+                        st.warning(f"Could not delete temporary file: {cleanup_error}")
 
         else:
             st.error("Please upload an Excel file before sending messages.")
 
     # Additional instructions
-    st.sidebar.info(""" 
-    ## Instructions
-    1. Prepare an Excel file with columns:
+    st.sidebar.info("""
+    ## 📋 Instructions
+    1. **Prepare an Excel file** with columns:
        - Name
        - Phone Number
-    2. Optional: Upload an image to send
-    3. Enter your message template
-    4. Click 'Send Messages'
-    5. IMPORTANT: Keep WhatsApp Web open in your default browser
-    
-    Note: Messages will be sent automatically using PyWhatKit.
-    Ensure phone numbers are for Indian numbers (starting with +91)
+    2. **Optional: Upload Media** (Image or Video)
+       - Supported formats: PNG, JPG, JPEG, GIF, MP4, AVI, MOV, MKV
+       - Max size: 16MB for images, 100MB for videos
+    3. **Enter your message template**
+       - Use {{Name}} for personalization
+    4. **Click 'Send Messages'**
+    5. **IMPORTANT: Keep WhatsApp Web open** in your default browser
+
+    ## ⚠️ Important Notes
+    - Messages will be sent automatically using PyWhatKit
+    - Ensure phone numbers are for Indian numbers (starting with +91)
+    - Media files are temporarily stored and deleted after sending
+    - Each message has a 10-second delay to avoid rate limiting
     """)
 
 if __name__ == "__main__":
