@@ -13,8 +13,8 @@ def install_dependencies():
         'pyautogui',
         'python-xlib',  # for Linux/Mac
         'pywin32',      # for Windows clipboard support
-        'openpyxl==3.0.10',  # Use stable version to avoid extLst error
-        'xlrd>=2.0.1'         # Add xlrd for .xls file support
+        'openpyxl>=3.1.0',  # Compatible with pandas and fixes extLst error
+        'xlrd>=2.0.1'        # Add xlrd for .xls file support
     ]
     
     for dep in dependencies:
@@ -135,15 +135,15 @@ def main():
                         
                 except Exception as excel_error:
                     st.error(f"Error reading Excel file: {excel_error}")
-                    
+
                     # Show specific error messages and solutions
                     if "extLst" in str(excel_error):
                         st.error("⚠️ openpyxl version compatibility issue detected!")
-                        st.info("💡 Solution: Run this command in terminal: pip install openpyxl==3.0.10")
+                        st.info("💡 Solution: Run this command in terminal: pip install openpyxl>=3.1.0")
                     elif "xlrd" in str(excel_error) or "Missing optional dependency 'xlrd'" in str(excel_error):
                         st.error("⚠️ Missing xlrd dependency for .xls files!")
                         st.info("💡 Solution: Run this command in terminal: pip install xlrd>=2.0.1")
-                    
+
                     # Try alternative approach
                     try:
                         st.info("Attempting alternative file reading method...")
@@ -154,7 +154,7 @@ def main():
                     except Exception as fallback_error:
                         st.error(f"All file reading methods failed: {fallback_error}")
                         st.error("Please ensure you have the correct dependencies installed:")
-                        st.code("pip install openpyxl==3.0.10 xlrd>=2.0.1")
+                        st.code("pip install -r requirements.txt")
                         return
 
                 # Validate columns
@@ -187,7 +187,7 @@ def main():
                             pyautogui.hotkey('ctrl', 't')  # Open new tab
                             pyautogui.typewrite("https://web.whatsapp.com")  # Navigate to WhatsApp Web
                             pyautogui.press('enter')
-                            time.sleep(15)  # Wait for WhatsApp Web to load
+                            time.sleep(20)  # Wait for WhatsApp Web to load
                             whatsapp_open = True
 
                         # Send message
